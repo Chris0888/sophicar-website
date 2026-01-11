@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sophicar Assistant Pro</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/minisearch@6.1.0/dist/umd/index.min.js"></script>
+
+    <style>
+        /* --- 核心变量 --- */
+        :root {
+            --primary-color: #7D2AE8;
+            --gradient: linear-gradient(135deg, #00C4CC 0%, #7D2AE8 100%);
+            --bg-color: #F2F3F5;
+            --white: #ffffff;
+            --text-main: #0D1216;
+            --text-light: #5E6770;
+            --border-light: #E1E4E8;
+            --shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+        }
+
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg-color); margin: 0; height: 100vh; display: flex; justify-content: center; align-items: center; }
+        
+        .chatbot-window { 
+            position: fixed; bottom: 80px; right: 30px; width: 380px; height: 650px; 
+            background: var(--white); border-radius: 16px; box-shadow: var(--shadow); 
+            display: flex; flex-direction: column; overflow: hidden; 
+            border: 1px solid #f0f0f0;
+        }
+
+        /* 头部 */
+        .chat-header { 
+            padding: 16px 20px; border-bottom: 1px solid var(--border-light); 
+            display: flex; justify-content: space-between; align-items: center; 
+            background: #fff; z-index: 2; 
+        }
+        .header-left { display: flex; align-items: center; gap: 12px; }
+        .avatar-circle { 
+            width: 36px; height: 36px; border-radius: 50%; 
+            background: var(--gradient); color: white; 
+            display: flex; justify-content: center; align-items: center; 
+            font-weight: 700; font-size: 18px; 
+        }
+        .header-text h3 { margin: 0; font-size: 16px; color: var(--text-main); font-weight: 600; }
+        .header-text p { display: none; }
+        .icon-btn { background: none; border: none; cursor: pointer; color: #888; padding: 4px; transition: 0.2s; }
+        .icon-btn:hover { color: var(--primary-color); }
+
+        /* 消息区 */
+        .chat-body { 
+            flex: 1; padding: 20px; overflow-y: auto; 
+            background-color: #FAFAFB; display: flex; flex-direction: column; gap: 16px; 
+        }
+        .message { max-width: 85%; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; word-wrap: break-word; }
+        .message.bot { 
+            align-self: flex-start; background: var(--white); 
+            border: 1px solid var(--border-light); border-bottom-left-radius: 2px; 
+            color: var(--text-main); 
+        }
+        .message.user { 
+            align-self: flex-end; background: var(--primary-color); 
+            color: white; border-bottom-right-radius: 2px; 
+        }
+        .message strong { color: var(--primary-color); }
+
+        /* 底部 */
+        .chat-footer { padding: 16px 20px; background: var(--white); }
+        .input-wrapper {
+            display: flex; align-items: center; gap: 8px;
+            border: 1px solid var(--primary-color);
+            border-radius: 24px; padding: 6px 6px 6px 12px;
+            box-shadow: 0 2px 8px rgba(125, 42, 232, 0.05);
+            background: white;
+        }
+        .chat-input { flex: 1; border: none; outline: none; font-size: 14px; color: var(--text-main); background: transparent; }
+        .chat-input::placeholder { color: #aaa; }
+        .kb-stats { display: none; }
+        .action-btn { 
+            width: 32px; height: 32px; border-radius: 50%; border: none; 
+            display: flex; align-items: center; justify-content: center; cursor: pointer; 
+            transition: 0.2s; background: transparent;
+        }
+        .action-btn:hover { background: #F2F3F5; }
+        .action-btn svg { width: 20px; height: 20px; fill: #666; }
+        .send-btn svg { fill: var(--primary-color); }
+
+        /* 组件 */
+        .sources-container { margin-top: 8px; padding-top: 6px; border-top: 1px dashed #eee; font-size: 11px; color: #999; }
+        .source-tag { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; margin-right: 4px; }
+        .status-bar { font-size: 12px; color: var(--primary-color); padding: 0 20px 8px; display: none; align-items: center; gap: 6px; }
+        .spinner { width: 10px; height: 10px; border: 2px solid #eee; border-top-color: var(--primary-color); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Markdown */
+        .message p { margin: 0; }
+        .message ul, .message ol { margin: 4px 0; padding-left: 20px; }
+        .message pre { background: #f5f5f5; padding: 8px; border-radius: 4px; overflow-x: auto; }
+        .message blockquote { border-left: 3px solid var(--primary-color); margin: 0; padding-left: 10px; color: #666; font-style: italic; }
+    </style>
+</head>
+<body>
+    
+    <div class="chatbot-window">
+        <div class="chat-header">
+            <div class="header-left">
+                <div class="avatar-circle">S</div>
+                <div class="header-text">
+                    <h3>Sophicar Assistant</h3>
+                    <p>Model: Hidden</p>
+                </div>
+            </div>
+            <button class="icon-btn" onclick="rag.clearKB()" title="Clear Memory">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+            </button>
+        </div>
+
+        <div class="chat-body" id="chatBody">
+            <div class="message bot">
+                Hi, I'm the Sophicar Assistant. I can help with anything you need😊
+            </div>
+        </div>
+
+        <div class="status-bar" id="statusBar">
+            <div class="spinner"></div>
+            <span id="statusText">Thinking...</span>
+        </div>
+
+        <div class="chat-footer">
+            <div class="kb-stats" id="kbStats">Hidden Stats</div>
+            <div class="input-wrapper">
+                <button class="action-btn" onclick="document.getElementById('fileInput').click()" title="Upload">
+                    <input type="file" id="fileInput" accept=".txt,.pdf,.docx" style="display: none;" multiple onchange="handleFileUpload(this)">
+                    <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                </button>
+                <input type="text" class="chat-input" id="userInput" placeholder="Ask Anything" autocomplete="off">
+                <button class="action-btn send-btn" id="sendBtn" onclick="sendMessage()">
+                    <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ================= 配置 =================
+        const CONFIG = {
+            apiKey: 'sk-E2L7DeAGtiXkuUnvJmDMZO9qAeBWsFPzJgtRk9aoFafZzBao',
+            chatUrl: 'https://once.novai.su/v1/chat/completions',
+            embedUrl: 'https://once.novai.su/v1/embeddings',
+            chatModel: '[次]gpt-5.2',
+            embedModel: 'text-embedding-3-small',
+            chunkSize: 800,
+            topK: 6,
+            highScore: 0.30, 
+            lowScore: 0.15
+        };
+
+        // ================= 中文 N-Gram 分词器 (2-gram) =================
+        const zhNgramTokenizer = (str) => {
+            const s = (str || "").toLowerCase();
+            const tokens = [];
+            const latin = s.match(/[a-z0-9_]+/g) || [];
+            tokens.push(...latin);
+            const clean = s.replace(/\s+/g, "");
+            for (let i = 0; i < clean.length - 1; i++) {
+                tokens.push(clean.slice(i, i + 2));
+            }
+            return tokens;
+        };
+
+        // ================= 核心逻辑 =================
+        class RAGService {
+            constructor() {
+                this.dbName = 'SophicarRAG_DB';
+                this.storeName = 'chunks';
+                this.db = null;
+                this.miniSearch = new MiniSearch({ 
+                    fields: ['text'], 
+                    storeFields: ['text', 'filename', 'chunkId'],
+                    tokenize: zhNgramTokenizer 
+                });
+                this.useEmbeddings = true;
+            }
+
+            async init() {
+                return new Promise((resolve) => {
+                    const req = indexedDB.open(this.dbName, 1);
+                    req.onupgradeneeded = (e) => {
+                        this.db = e.target.result;
+                        if (!this.db.objectStoreNames.contains(this.storeName)) this.db.createObjectStore(this.storeName, { keyPath: 'id' });
+                    };
+                    req.onsuccess = (e) => {
+                        this.db = e.target.result;
+                        this.loadIndices();
+                        resolve();
+                    };
+                });
+            }
+
+            async loadIndices() {
+                const chunks = await this.getAllChunks();
+                if (chunks.length) this.miniSearch.addAll(chunks);
+            }
+
+            async getAllChunks() {
+                return new Promise(resolve => {
+                    if (!this.db) return resolve([]);
+                    const tx = this.db.transaction(this.storeName, 'readonly');
+                    tx.objectStore(this.storeName).getAll().onsuccess = (e) => resolve(e.target.result);
+                });
+            }
+
+            async clearKB() {
+                const tx = this.db.transaction(this.storeName, 'readwrite');
+                tx.objectStore(this.storeName).clear();
+                tx.oncomplete = () => {
+                    this.miniSearch.removeAll();
+                    appendMessage("Memory cleared.", 'bot');
+                };
+            }
+
+            async processFile(file) {
+                setStatus(true, `Reading ${file.name}...`);
+                try {
+                    let text = await (file.type === 'application/pdf' ? this.parsePDF(file) : (file.name.endsWith('.docx') ? this.parseDocx(file) : file.text()));
+                    if (!text.trim()) throw new Error("Empty text");
+
+                    setStatus(true, "Chunking...");
+                    const chunks = [];
+                    for (let i = 0; i < text.length; i += CONFIG.chunkSize - 100) {
+                        chunks.push({
+                            id: `${file.name}-${Date.now()}-${i}`,
+                            text: text.slice(i, i + CONFIG.chunkSize),
+                            filename: file.name,
+                            chunkId: chunks.length + 1
+                        });
+                    }
+
+                    setStatus(true, "Embedding...");
+                    for (let i = 0; i < chunks.length; i += 5) {
+                        const batch = chunks.slice(i, i + 5);
+                        if (this.useEmbeddings) {
+                            try {
+                                const vecs = await this.fetchEmbeddings(batch.map(c => c.text));
+                                batch.forEach((c, idx) => c.embedding = vecs[idx]);
+                            } catch (e) { 
+                                console.warn("Embedding batch failed:", e);
+                            }
+                        }
+                        const tx = this.db.transaction(this.storeName, 'readwrite');
+                        batch.forEach(c => tx.objectStore(this.storeName).put(c));
+                    }
+                    
+                    this.miniSearch.addAll(chunks);
+                    setStatus(false);
+                    return chunks.length;
+                } catch (e) {
+                    setStatus(false);
+                    appendMessage(`Error processing ${file.name}: ${e.message}`, 'bot');
+                    return 0;
+                }
+            }
+
+            async parsePDF(file) {
+                const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+                let t = '';
+                for (let i = 1; i <= pdf.numPages; i++) t += (await (await pdf.getPage(i)).getTextContent()).items.map(s => s.str).join(' ');
+                return t;
+            }
+            async parseDocx(file) { return (await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })).value; }
+
+            async fetchEmbeddings(texts) {
+                try {
+                    const res = await fetch(CONFIG.embedUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${CONFIG.apiKey}` },
+                        body: JSON.stringify({ model: CONFIG.embedModel, input: texts })
+                    });
+                    
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.error?.message || "Embedding API Error");
+                    }
+                    
+                    const json = await res.json();
+                    return json.data.map(d => d.embedding);
+                } catch(e) {
+                    console.error(e);
+                    throw e;
+                }
+            }
+
+            async retrieve(query) {
+                const topN = 30;
+                let vecResults = [];
+                let kwResults = [];
+
+                if (this.useEmbeddings) {
+                    try {
+                        const qVec = (await this.fetchEmbeddings([query]))[0];
+                        const all = await this.getAllChunks();
+                        
+                        const scored = all.filter(c => c.embedding)
+                            .map(c => ({ ...c, score: this.cosine(qVec, c.embedding) }))
+                            .sort((a, b) => b.score - a.score)
+                            .slice(0, topN);
+
+                        if (scored.length > 0) {
+                            if (scored[0].score >= CONFIG.highScore) {
+                                vecResults = scored.filter(x => x.score >= CONFIG.lowScore).slice(0, CONFIG.topK);
+                            } else {
+                                console.log("Low confidence vector match. Keeping top 3.");
+                                vecResults = scored.slice(0, 3);
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Vector retrieve failed:", e);
+                    }
+                }
+                
+                try {
+                    kwResults = this.miniSearch.search(query, { fuzzy: 0.2, prefix: true }).slice(0, CONFIG.topK);
+                } catch (e) { console.error(e); }
+
+                const combinedMap = new Map();
+                vecResults.forEach(r => combinedMap.set(r.id, r));
+                kwResults.forEach(r => {
+                    if (!combinedMap.has(r.id)) combinedMap.set(r.id, { ...r, score: r.score || 0.5 });
+                });
+
+                return Array.from(combinedMap.values())
+                    .sort((a, b) => (b.score || 0) - (a.score || 0))
+                    .slice(0, CONFIG.topK);
+            }
+
+            cosine(a, b) {
+                let dot = 0, na = 0, nb = 0;
+                for (let i = 0; i < a.length; i++) {
+                    dot += a[i] * b[i];
+                    na += a[i] * a[i];
+                    nb += b[i] * b[i];
+                }
+                return dot / (Math.sqrt(na) * Math.sqrt(nb) + 1e-10);
+            }
+        }
+
+        // ================= UI 交互 =================
+        const rag = new RAGService();
+        rag.init();
+
+        const chatBody = document.getElementById('chatBody');
+        const userInput = document.getElementById('userInput');
+        const statusBar = document.getElementById('statusBar');
+
+        function setStatus(show, text) {
+            statusBar.style.display = show ? 'flex' : 'none';
+            document.getElementById('statusText').innerText = text;
+        }
+
+        async function handleFileUpload(input) {
+            if (!input.files.length) return;
+            let total = 0;
+            for (const f of input.files) total += await rag.processFile(f);
+            appendMessage(`Processed ${input.files.length} file(s). Ready!`, 'bot');
+            input.value = '';
+        }
+
+        async function sendMessage() {
+            const text = userInput.value.trim();
+            if (!text) return;
+            
+            appendMessage(text, 'user');
+            userInput.value = '';
+            setStatus(true, "Searching...");
+
+            // 检索
+            let context = "";
+            let sources = [];
+            
+            try {
+                const docs = await rag.retrieve(text);
+                const hasContext = docs.length > 0; // 修复点 2: 显式 Flag
+
+                if (hasContext) {
+                    context = docs.map(d => `[File: ${d.filename}] ${d.text}`).join("\n\n");
+                    sources = docs.map(d => ({ filename: d.filename, id: d.chunkId }));
+                } else {
+                    context = ""; // 修复点 2: 保持为空，不传误导性文本
+                }
+                
+                // System Prompt: 使用 HAS_CONTEXT 逻辑
+                const systemInstructions = `You are Sophicar Assistant.
+RULES:
+1. Answer strictly based on the provided [CONTEXT].
+2. If HAS_CONTEXT is false or [CONTEXT] is empty, you MUST answer: "I cannot find information about this in the documents."
+3. If the answer is found, you MUST include a short quote (extract) from the text.
+4. Do not make up information.
+5. Provide the source filename if possible.`;
+
+                // User Prompt: 传入 Flag
+                const userPrompt = `HAS_CONTEXT=${hasContext}
+[CONTEXT START]
+${context}
+[CONTEXT END]
+
+User Query: ${text}`;
+
+                setStatus(true, "Thinking...");
+                
+                const res = await fetch(CONFIG.chatUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${CONFIG.apiKey}` },
+                    body: JSON.stringify({
+                        model: CONFIG.chatModel,
+                        messages: [
+                            { role: "system", content: systemInstructions }, 
+                            { role: "user", content: userPrompt }
+                        ],
+                        temperature: 0.1 
+                    })
+                });
+                
+                const data = await res.json();
+                
+                if (!res.ok || data.error) {
+                    throw new Error(data.error?.message || `API Error: ${res.status}`);
+                }
+                if (!data.choices || !data.choices.length) {
+                    throw new Error("Empty response from API");
+                }
+
+                appendMessage(data.choices[0].message.content, 'bot', sources); 
+            } catch (e) {
+                console.error(e);
+                appendMessage(`**Error:** ${e.message}`, 'bot');
+            } finally {
+                setStatus(false);
+            }
+        }
+
+        function appendMessage(text, sender, sources = []) {
+            const div = document.createElement('div');
+            div.className = `message ${sender}`;
+            div.innerHTML = marked.parse(text);
+            
+            if (sender === 'bot' && sources.length) {
+                const sDiv = document.createElement('div');
+                sDiv.className = 'sources-container';
+                const uniqueSrc = [...new Map(sources.map(s => [`${s.filename}:${s.id}`, s])).values()];
+                sDiv.innerHTML = 'Sources: ' + uniqueSrc.map(s => 
+                    `<span class="source-tag">${s.filename} #${s.id}</span>`
+                ).join('');
+                div.appendChild(sDiv);
+            }
+            
+            chatBody.appendChild(div);
+            chatBody.scrollTop = chatBody.scrollHeight;
+        }
+        
+        userInput.addEventListener('keypress', (e) => { if(e.key === 'Enter') sendMessage(); });
+    </script>
+</body>
+</html>
